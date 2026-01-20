@@ -1,27 +1,26 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useViewer } from "./useViewer";
 import { viewerClamp } from "./ViewerContext";
 
 type Props = {
     src: string;
     alt?: string;
-    minScale?: number; // e.g. 0.25
-    maxScale?: number; // e.g. 5
+    minScale?: number;
+    maxScale?: number;
 };
 
 export default function PlanViewer({ src, alt = "Plan", minScale = 0.25, maxScale = 5 }: Props) {
-    const {
-        transform,
-        setTransform,
-        setImageSize,
-        setViewportSize,
-        addLog,
-        resetCenter,
-        panSessionRef,
-    } = useViewer();
+    const { transform, setTransform, setImageSize, setViewportSize, addLog, resetCenter, panSessionRef } =
+        useViewer();
 
     const containerRef = useRef<HTMLDivElement | null>(null);
     const imgRef = useRef<HTMLImageElement | null>(null);
+
+    // Keep latest transform for endPan logging (avoid stale closure)
+    const transformRef = useRef(transform);
+    useEffect(() => {
+        transformRef.current = transform;
+    }, [transform]);
 
     // Keep viewport size updated
     useEffect(() => {
@@ -37,7 +36,21 @@ export default function PlanViewer({ src, alt = "Plan", minScale = 0.25, maxScal
         return () => ro.disconnect();
     }, [setViewportSize]);
 
-    // Once image loads, store its natural size and center it
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+
+        const onWheel = (e: WheelEvent) => handleWheelNative(e);
+
+        // critical: passive: false so preventDefault actually blocks page scroll
+        el.addEventListener("wheel", onWheel, { passive: false });
+
+        return () => {
+            el.removeEventListener("wheel", onWheel as EventListener);
+        };
+    }, [minScale, maxScale]);
+
+
     const onImgLoad = () => {
         const img = imgRef.current;
         const el = containerRef.current;
@@ -59,27 +72,55 @@ export default function PlanViewer({ src, alt = "Plan", minScale = 0.25, maxScal
         if (!el) return;
 
         const rect = el.getBoundingClientRect();
-
-        // cursor position in viewport coordinates
         const cx = e.clientX - rect.left;
         const cy = e.clientY - rect.top;
 
-        // zoom factor (trackpad/mouse friendly)
         const zoomIntensity = 0.0015;
-        const delta = -e.deltaY; // positive means zoom in
+        const delta = -e.deltaY;
         const factor = Math.exp(delta * zoomIntensity);
 
         setTransform((prev) => {
             const oldScale = prev.scale;
             const newScale = viewerClamp(oldScale * factor, minScale, maxScale);
-
             if (newScale === oldScale) return prev;
 
-            // world coords under cursor before zoom
             const worldX = (cx - prev.tx) / oldScale;
             const worldY = (cy - prev.ty) / oldScale;
 
-            // new translate keeps same world point under cursor
+            const newTx = cx - worldX * newScale;
+            const newTy = cy - worldY * newScale;
+
+            addLog({
+                type: newScale > oldScale ? "zoom_in" : "zoom_out",
+                details: `scale ${oldScale.toFixed(3)} → ${newScale.toFixed(3)}`,
+            });
+
+            return { scale: newScale, tx: newTx, ty: newTy };
+        });
+    };
+    const handleWheelNative = (e: WheelEvent) => {
+        // Prevent page scroll while zooming inside viewer
+        e.preventDefault();
+
+        const el = containerRef.current;
+        if (!el) return;
+
+        const rect = el.getBoundingClientRect();
+        const cx = e.clientX - rect.left;
+        const cy = e.clientY - rect.top;
+
+        const zoomIntensity = 0.0015;
+        const delta = -e.deltaY;
+        const factor = Math.exp(delta * zoomIntensity);
+
+        setTransform((prev) => {
+            const oldScale = prev.scale;
+            const newScale = viewerClamp(oldScale * factor, minScale, maxScale);
+            if (newScale === oldScale) return prev;
+
+            const worldX = (cx - prev.tx) / oldScale;
+            const worldY = (cy - prev.ty) / oldScale;
+
             const newTx = cx - worldX * newScale;
             const newTy = cy - worldY * newScale;
 
@@ -92,25 +133,43 @@ export default function PlanViewer({ src, alt = "Plan", minScale = 0.25, maxScal
         });
     };
 
-    const handleMouseDown: React.MouseEventHandler<HTMLDivElement> = (e) => {
-        // left click only
-        if (e.button !== 0) return;
 
+    const endPan = () => {
+        if (!panSessionRef.current.active) return;
+        panSessionRef.current.active = false;
+
+        const startTx = panSessionRef.current.startTx;
+        const startTy = panSessionRef.current.startTy;
+
+        const endTx = transformRef.current.tx;
+        const endTy = transformRef.current.ty;
+
+        addLog({
+            type: "pan_end",
+            details: `delta dx=${(endTx - startTx).toFixed(1)}, dy=${(endTy - startTy).toFixed(1)}`,
+        });
+    };
+
+    const handlePointerDown: React.PointerEventHandler<HTMLDivElement> = (e) => {
+        if (e.button !== 0) return; // left click only
         const el = containerRef.current;
         if (!el) return;
 
-        el.setPointerCapture?.((e as unknown as PointerEvent).pointerId); // harmless if not supported
+        el.setPointerCapture(e.pointerId);
 
         panSessionRef.current.active = true;
         panSessionRef.current.startX = e.clientX;
         panSessionRef.current.startY = e.clientY;
-        panSessionRef.current.startTx = transform.tx;
-        panSessionRef.current.startTy = transform.ty;
+        panSessionRef.current.startTx = transformRef.current.tx;
+        panSessionRef.current.startTy = transformRef.current.ty;
 
-        addLog({ type: "pan_start", details: `start tx=${transform.tx.toFixed(1)}, ty=${transform.ty.toFixed(1)}` });
+        addLog({
+            type: "pan_start",
+            details: `start tx=${transformRef.current.tx.toFixed(1)}, ty=${transformRef.current.ty.toFixed(1)}`,
+        });
     };
 
-    const handleMouseMove: React.MouseEventHandler<HTMLDivElement> = (e) => {
+    const handlePointerMove: React.PointerEventHandler<HTMLDivElement> = (e) => {
         if (!panSessionRef.current.active) return;
 
         const dx = e.clientX - panSessionRef.current.startX;
@@ -123,33 +182,8 @@ export default function PlanViewer({ src, alt = "Plan", minScale = 0.25, maxScal
         }));
     };
 
-    const endPan = (clientX?: number, clientY?: number) => {
-        if (!panSessionRef.current.active) return;
-
-        panSessionRef.current.active = false;
-
-        const startTx = panSessionRef.current.startTx;
-        const startTy = panSessionRef.current.startTy;
-
-        const endTx = transform.tx;
-        const endTy = transform.ty;
-
-        const deltaTx = endTx - startTx;
-        const deltaTy = endTy - startTy;
-
-        addLog({
-            type: "pan_end",
-            details: `delta dx=${deltaTx.toFixed(1)}, dy=${deltaTy.toFixed(1)}` + (clientX && clientY ? ` (mouse ${clientX},${clientY})` : ""),
-        });
-    };
-
-    const handleMouseUp: React.MouseEventHandler<HTMLDivElement> = (e) => {
-        endPan(e.clientX, e.clientY);
-    };
-
-    const handleMouseLeave: React.MouseEventHandler<HTMLDivElement> = () => {
-        endPan();
-    };
+    const handlePointerUp: React.PointerEventHandler<HTMLDivElement> = () => endPan();
+    const handlePointerCancel: React.PointerEventHandler<HTMLDivElement> = () => endPan();
 
     const transformStyle: React.CSSProperties = {
         transform: `translate(${transform.tx}px, ${transform.ty}px) scale(${transform.scale})`,
@@ -162,11 +196,10 @@ export default function PlanViewer({ src, alt = "Plan", minScale = 0.25, maxScal
     return (
         <div
             ref={containerRef}
-            onWheel={handleWheel}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseLeave}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
             onDoubleClick={resetCenter}
             style={{
                 height: "100%",
@@ -175,6 +208,8 @@ export default function PlanViewer({ src, alt = "Plan", minScale = 0.25, maxScal
                 background: "#0b0b0b",
                 position: "relative",
                 cursor: panSessionRef.current.active ? "grabbing" : "grab",
+                touchAction: "none",
+                overscrollBehavior: "contain",
             }}
         >
             <img ref={imgRef} src={src} alt={alt} onLoad={onImgLoad} draggable={false} style={transformStyle} />
