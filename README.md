@@ -65,51 +65,52 @@ Design an architecture for uploading, storing, and downloading files with the fo
  - AWS serverless or container-based deployment
 
 ### Designed Architecture (Conceptual)
+```
+Architecture Diagram (Conceptual)
+┌─────────────────────────────┐
+│          Frontend           │
+│     React Application       │
+│                             │
+│  - Upload files             │
+│  - List files               │
+│  - Download by type         │
+└───────────────┬─────────────┘
+                │
+                │ HTTPS (REST)
+                ▼
+┌─────────────────────────────┐
+│        Backend API           │
+│   Node.js + TypeScript       │
+│        (Express)             │
+│                             │
+│  - Create projects           │
+│  - Register file metadata    │
+│  - Generate upload URLs      │
+│  - Generate download URLs    │
+└───────────────┬─────────────┘
+                │
+                │ Metadata (SQL)
+                ▼
+┌─────────────────────────────┐
+│        PostgreSQL            │
+│                             │
+│  - projects                  │
+│  - files                     │
+│  - file types                │
+│  - storage keys              │
+└───────────────┬─────────────┘
+                │
+                │ Presigned URL
+                ▼
+┌─────────────────────────────┐
+│      Object Storage          │
+│        Amazon S3             │
+│                             │
+│  - Files by project          │
+│  - Files by type             │
+└─────────────────────────────┘
 
-+---------------------+
-|     Frontend        |
-|  React Application  |
-|                     |
-| - Upload files      |
-| - List files        |
-| - Download by type  |
-+----------+----------+
-           |
-           | HTTPS (REST)
-           v
-+---------------------+
-|     Backend API     |
-|  Node.js + TS       |
-|  (Express)          |
-|                     |
-| - Create projects   |
-| - Register files    |
-| - Generate          |
-|   presigned URLs    |
-+----------+----------+
-           |
-           | Metadata (SQL)
-           v
-+---------------------+
-|    PostgreSQL       |
-|                     |
-| - projects          |
-| - files             |
-| - file types        |
-| - storage keys      |
-+---------------------+
-
-           |
-           | Presigned URL
-           v
-+---------------------+
-|  Object Storage     |
-|  Amazon S3          |
-|                     |
-| - Files by project  |
-| - Files by type     |
-+---------------------+
-
+```
 #### Frontend
  - Requests presigned URLs for uploads and downloads
  - Uploads and downloads files directly to/from object storage using presigned URLs
