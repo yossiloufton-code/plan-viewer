@@ -11,6 +11,9 @@ This repository contains a complete solution for a 3-part technical assignment, 
 ### Prerequisites
 - Node.js (v18 or later recommended)
 - npm
+- pgadmin/local postgres
+
+#### env files included for convinience.
 
 ### Installation
 npm install
