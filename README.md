@@ -6,6 +6,19 @@ This repository contains a complete solution for a 3-part technical assignment, 
 2. An AWS-oriented architecture design for file management
 3. A Node.js + TypeScript backend implementation based on that design
 
+## 🚀 Setup Instructions
+
+### Prerequisites
+- Node.js (v18 or later recommended)
+- npm
+
+### Installation
+npm install
+
+### Run the project
+ - npm run dev
+ - The application will be available at: http://localhost:5173
+
 ## Assignment 1 – 2D Plan Viewer (Frontend)
 ### Goal
 Build a simple 2D plan viewer that allows viewing, navigating, and logging interactions on a provided plan image.
@@ -40,7 +53,6 @@ Build a simple 2D plan viewer that allows viewing, navigating, and logging inter
 
 ## Assignment 2 – Architecture Design (AWS Serverless)
 ### Goal
-
 Design an architecture for uploading, storing, and downloading files with the following constraints:
  - Multiple projects
  - Multiple file types
@@ -50,32 +62,123 @@ Design an architecture for uploading, storing, and downloading files with the fo
 
 ### Designed Architecture (Conceptual)
 
++---------------------+
+|     Frontend        |
+|  React Application  |
+|                     |
+| - Upload files      |
+| - List files        |
+| - Download by type  |
++----------+----------+
+           |
+           | HTTPS (REST)
+           v
++---------------------+
+|     Backend API     |
+|  Node.js + TS       |
+|  (Express)          |
+|                     |
+| - Create projects   |
+| - Register files    |
+| - Generate          |
+|   presigned URLs    |
++----------+----------+
+           |
+           | Metadata (SQL)
+           v
++---------------------+
+|    PostgreSQL       |
+|                     |
+| - projects          |
+| - files             |
+| - file types        |
+| - storage keys      |
++---------------------+
+
+           |
+           | Presigned URL
+           v
++---------------------+
+|  Object Storage     |
+|  Amazon S3          |
+|                     |
+| - Files by project  |
+| - Files by type     |
++---------------------+
+
 #### Frontend
  - Requests presigned URLs for uploads and downloads
+ - Uploads and downloads files directly to/from object storage using presigned URLs
+ - Displays file lists and supports filtering by file type per project
 
 #### Backend (Node.js / TypeScript)
- - REST API for:
-  - Project creation
-  - File registration
-  - Presigned upload/download URL generation
+  - REST API responsible for orchestration and validation, not file streaming
+ - Handles:
+  - Project creation and management
+  - File metadata registration
+  - Presigned upload URL generation
+  - Presigned download URL generation (by file type)
+ - Acts as a security boundary between the client and storage
 
 #### Storage
  - Amazon S3 (object storage)
+ - Stores raw file binaries
  - Files organized by project and type
+   - Project
+   - File type
+ - Designed for high availability and scalable storage
 
 #### Database
  - PostgreSQL (metadata only)
  - Stores projects, file records, types, sizes, and storage keys
+ - No binary data is stored in the database
 
 #### Security
- - Presigned URLs for direct upload/download
- - No file data passes through the backend in production
+ - Presigned URLs are:
+  - Time-limited
+  - Scoped to a specific file and operation
+ - Backend credentials are never exposed to the client
+ - In production, access to S3 is handled via IAM roles, not static keys
 
 #### Compute (target)
- - AWS Lambda or ECS (containerized)
- - IAM roles for secure access to S3
-
+ - AWS Lambda or ECS (containerized services)
+ - Stateless backend instances
+ - Horizontal scalability based on traffic
+ - IAM roles used for secure access to S3 and other AWS services
 Note: The backend is implemented to run locally, but is structured to be AWS-ready.
+
+## ADDITIONAL NOTES
+## Storage Modes (Local vs AWS)
+This solution supports two storage modes with the same API contract:
+### Mode A – Local Storage (used in this repo for development)
+ - The backend stores uploaded files on the local filesystem under /uploads
+ - Upload flow:
+   1. Frontend requests upload targets from backend
+   2. Backend returns a local upload endpoint (e.g. PUT /projects/:projectId/files/:fileId/upload)
+   3. Frontend uploads file bytes to the backend
+   4. Backend writes the file to disk and updates Postgres metadata (status=uploaded)
+
+ - Download flow:
+ 1. Frontend requests download targets (by type or fileId)
+ 2. Backend returns a local download endpoint (e.g. GET /projects/:projectId/files/:fileId/download)
+ 3. Backend streams the file to the client
+
+### Mode B – AWS S3 Presigned URLs (target production architecture)
+
+ - The backend generates presigned S3 URLs
+ - Upload flow:
+   1. Frontend requests presigned upload URLs
+   2. Backend returns presigned S3 PUT URLs (no file bytes go through backend)
+   3. Frontend uploads directly to S3
+   4. Backend stores metadata in Postgres (and can optionally confirm completion)
+ - Download flow:
+ 1. Frontend requests presigned download URLs by type or fileId
+ 2. Backend returns presigned S3 GET URLs
+ 3. Frontend downloads directly from S3
+
+### Switching modes
+ - The mode is selected via environment configuration (e.g. STORAGE_MODE=local|aws)
+ - The rest of the system remains unchanged (same endpoints and database schema)
 
 ## Assignment 3 – Backend Implementation
 ### Goal
