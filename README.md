@@ -15,12 +15,13 @@ This repository contains a complete solution for a 3-part technical assignment, 
 
 #### env files included for convinience.
 
-### Installation
+### Installation frontend/backend folders
 npm install
 
-### Run the project
+### Run the project frontend/backend folders
  - npm run dev
- - The application will be available at: http://localhost:5173
+ - The application frontend will be available at: http://localhost:5173
+ - The application backend will be available at: http://localhost:3000
 
 ## Assignment 1 – 2D Plan Viewer (Frontend)
 ### Goal
