@@ -1,0 +1,19 @@
+.layout {
+  display: flex;
+  gap: 12px;
+  height: calc(100vh - 24px);
+  padding: 12px;
+}
+
+.viewerCol {
+  flex: 1;
+  min-width: 0;
+}
+
+.sideCol {
+  width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 320px;
+}

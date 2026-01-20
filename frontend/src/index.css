@@ -1,0 +1,12 @@
+:root {
+  font-family: system-ui, Arial, sans-serif;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+}
+
+button {
+  cursor: pointer;
+}
